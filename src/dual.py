@@ -105,6 +105,7 @@ Dual(v=1.0, d=1.0)
 '''
 import math
 
+
 class Dual:
     '''
     The dual number v + d*epsilon with epsilon**2 == 0.
@@ -133,6 +134,66 @@ class Dual:
     >>> print(Dual(1, 2) + Dual(3, 4))
     4 + 6ε
     '''
+    def __init__(self, v, d):
+        self.v = v
+        self.d = d
+
+    def __repr__(self):
+        return f'Dual(v={self.v!r}, d={self.d!r})'
+
+    def __str__(self):
+        return f'{self.v} + {self.d}ε'
+
+    def __eq__(self, other):
+        if isinstance(other, Dual):
+            return self.v == other.v and self.d == other.d
+        return NotImplemented
+
+    def __hash__(self):
+        return hash((self.v, self.d))
+
+    def __add__(self, other):
+        if isinstance(other, Dual):
+            return Dual(self.v + other.v, self.d + other.d)
+        return Dual(self.v + other, self.d)
+
+    def __radd__(self, other):
+        return self.__add__(other)
+
+    def __sub__(self, other):
+        if isinstance(other, Dual):
+            return Dual(self.v - other.v, self.d - other.d)
+        return Dual(self.v - other, self.d)
+
+    def __rsub__(self, other):
+        return Dual(other - self.v, -self.d)
+
+    def __mul__(self, other):
+        if isinstance(other, Dual):
+            return Dual(self.v * other.v, self.d * other.v + self.v * other.d)
+        return Dual(self.v * other, self.d * other)
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    def __neg__(self):
+        return Dual(-self.v, -self.d)
+
+    def __truediv__(self, other):
+        if isinstance(other, Dual):
+            return Dual(self.v / other.v,
+                        (self.d * other.v - self.v * other.d) / (other.v ** 2))
+        return Dual(self.v / other, self.d / other)
+
+    def __rtruediv__(self, other):
+        return Dual(other / self.v, -other * self.d / (self.v ** 2))
+
+    def __pow__(self, other):
+        if isinstance(other, Dual):
+            v_val = self.v ** other.v
+            d_val = v_val * (other.d * math.log(self.v) + other.v * self.d / self.v)
+            return Dual(v_val, d_val)
+        return Dual(self.v ** other, other * self.v ** (other - 1) * self.d)
 
 
 def sin(x):
@@ -166,9 +227,10 @@ def tanh(x):
     >>> tanh(0.0)
     0.0
     '''
-    # this is the only one of these functions you need to implement
-    # there's only one doctest here,
-    # but lots of other tests depend on tanh
+    if isinstance(x, Dual):
+        t = math.tanh(x.v)
+        return Dual(t, (1 - t ** 2) * x.d)
+    return math.tanh(x)
 
 
 def exp(x):

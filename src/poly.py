@@ -105,6 +105,113 @@ class Poly:
     >>> print(Poly([1, 0, 2]))
     2x**2 + 1
     '''
+    def __init__(self, coeffs):
+        # Normalize: strip trailing zeros, guarantee at least [0].
+        c = list(coeffs)
+        while len(c) > 1 and c[-1] == 0:
+            c.pop()
+        if not c:
+            c = [0]
+        self.coeffs = c
+
+    def __repr__(self):
+        return f'Poly({self.coeffs!r})'
+
+    def __str__(self):
+        terms = []
+        for i in range(len(self.coeffs) - 1, -1, -1):
+            c = self.coeffs[i]
+            if c == 0:
+                continue
+            # magnitude string for the term (without its sign)
+            if i == 0:
+                body = f'{abs(c)}'
+            else:
+                var = 'x' if i == 1 else f'x**{i}'
+                if abs(c) == 1:
+                    body = var
+                else:
+                    body = f'{abs(c)}{var}'
+            if not terms:
+                # first (highest-degree) term decides overall sign
+                terms.append(('-' if c < 0 else '') + body)
+            else:
+                terms.append((' - ' if c < 0 else ' + ') + body)
+        if not terms:
+            return '0'
+        return ''.join(terms)
+
+    def __eq__(self, other):
+        if isinstance(other, Poly):
+            return self.coeffs == other.coeffs
+        return NotImplemented
+
+    # __hash__ must be explicitly disabled: defining __eq__ sets it to
+    # None automatically, but being explicit documents the intent.
+    __hash__ = None
+
+    def __call__(self, x):
+        return self.eval_horner(x)
+
+    def __neg__(self):
+        return Poly([-c for c in self.coeffs])
+
+    def __add__(self, other):
+        a, b = self.coeffs, other.coeffs
+        n = max(len(a), len(b))
+        out = [0] * n
+        for i in range(n):
+            ai = a[i] if i < len(a) else 0
+            bi = b[i] if i < len(b) else 0
+            out[i] = ai + bi
+        return Poly(out)
+
+    def __sub__(self, other):
+        a, b = self.coeffs, other.coeffs
+        n = max(len(a), len(b))
+        out = [0] * n
+        for i in range(n):
+            ai = a[i] if i < len(a) else 0
+            bi = b[i] if i < len(b) else 0
+            out[i] = ai - bi
+        return Poly(out)
+
+    def __mul__(self, other):
+        return self.mul_naive(other)
+
+    def derivative(self):
+        if len(self.coeffs) <= 1:
+            return Poly([0])
+        return Poly([i * c for i, c in enumerate(self.coeffs)][1:])
+
+    def __pow__(self, n):
+        if not isinstance(n, int) or n < 0:
+            raise ValueError('Poly exponent must be a non-negative int')
+        result = Poly([1])
+        for _ in range(n):
+            result = result * self
+        return result
+
+    # in-place ops: mutate self.coeffs, return self (tests check id)
+    def __iadd__(self, other):
+        self.coeffs = (self + other).coeffs
+        return self
+
+    def __isub__(self, other):
+        self.coeffs = (self - other).coeffs
+        return self
+
+    def __imul__(self, other):
+        self.coeffs = (self * other).coeffs
+        return self
+
+    def __ipow__(self, n):
+        self.coeffs = (self ** n).coeffs
+        return self
+
+    def mul_karatsuba(self, other):
+        return Poly(_karatsuba(self.coeffs, other.coeffs))
+
     def eval_naive(self, x):
         '''
         Evaluate by summing a_i * x**i one term at a time.  The
@@ -179,3 +286,55 @@ def _karatsuba(a, b):
     >>> _karatsuba([0], [1, 2, 3])
     [0, 0, 0]
     '''
+    # Base case: small inputs use schoolbook multiplication.  Without
+    # this cutoff the recursion never bottoms out and the slice
+    # overhead swamps the asymptotic gain.
+    if not a or not b:
+        return [0]
+    if len(a) <= 2 or len(b) <= 2:
+        out = [0] * (len(a) + len(b) - 1)
+        for i, ai in enumerate(a):
+            for j, bj in enumerate(b):
+                out[i + j] += ai * bj
+        return out
+
+    # Split at the midpoint of the longer operand so both halves are
+    # non-empty and the recursion is balanced.
+    n = max(len(a), len(b))
+    m = n // 2
+    a0, a1 = a[:m], a[m:]
+    b0, b1 = b[:m], b[m:]
+
+    z0 = _karatsuba(a0, b0)
+    z2 = _karatsuba(a1, b1)
+
+    # (a0 + a1)(b0 + b1) = z0 + z1 + z2  =>  z1 = middle - z0 - z2
+    a_sum = _add_lists(a0, a1)
+    b_sum = _add_lists(b0, b1)
+    z1 = _sub_lists(_sub_lists(_karatsuba(a_sum, b_sum), z0), z2)
+
+    # Reassemble: z0 + z1 * x^m + z2 * x^(2m)
+    out = [0] * (len(a) + len(b) - 1)
+    for i, c in enumerate(z0):
+        out[i] += c
+    for i, c in enumerate(z1):
+        out[i + m] += c
+    for i, c in enumerate(z2):
+        out[i + 2 * m] += c
+    return out
+
+
+def _add_lists(a, b):
+    n = max(len(a), len(b))
+    out = [0] * n
+    for i in range(n):
+        out[i] = (a[i] if i < len(a) else 0) + (b[i] if i < len(b) else 0)
+    return out
+
+
+def _sub_lists(a, b):
+    n = max(len(a), len(b))
+    out = [0] * n
+    for i in range(n):
+        out[i] = (a[i] if i < len(a) else 0) - (b[i] if i < len(b) else 0)
+    return out
